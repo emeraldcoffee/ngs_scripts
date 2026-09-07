@@ -25,8 +25,6 @@ while getopts "s:S:i:n:a:h" opt; do
                 fi
 
                 declare -g "sample_${i}=${sample_name}" # sample_1=30min_1, sample_1_1=30min_1
-                declare -g "sample_${i}_1=${sample_name}_1"
-                declare -g "sample_${i}_2=${sample_name}_2"
 
                 OPTIND=$((OPTIND + 1))
             done
@@ -69,21 +67,17 @@ echo ""
 echo -e "Beginning dual end sequencing upstream analysis.\n"
 
 # FastQC HTML generation to check sequencing quality
-if compgen -G "${sample_1_1}/*_2_fastqc.html" > /dev/null; then
+if compgen -G "${sample_1}/*_2_fastqc.html" > /dev/null; then
     echo -e "Skipping FastQC HTML generation.\n"
 else
     echo "Starting FastQC HTML generation."
 
     for ((i=1;i<=num_samples; i++)); do
-        sample1="sample_${i}_1"
-        sample2="sample_${i}_2"
+        sample="sample_${i}"
 
         fastqc -t 2 \
-            "${!sample1}"/*_1.fastq.gz \
-            "${!sample1}"/*_2.fastq.gz &
-        fastqc -t 2 \
-            "${!sample2}"/*_1.fastq.gz \
-            "${!sample2}"/*_2.fastq.gz &
+            "${!sample}"/*_1.fastq.gz \
+            "${!sample}"/*_2.fastq.gz &
     done
 
     wait
@@ -99,12 +93,11 @@ fi
 echo -e "Now trimming with cutadapt.\n"
 
 # trimming adapters, poly-G tails
-if compgen -G "${sample_1_1}/trimmed_*_2.fastq.gz" > /dev/null; then
+if compgen -G "${sample_1}/trimmed_*_2.fastq.gz" > /dev/null; then
     echo -e "Skipping cutadapt trimming.\n"
 else
     for ((i=1;i<=num_samples; i++)); do
-        sample1="sample_${i}_1"
-        sample2="sample_${i}_2"
+        sample="sample_${i}"
 
         cutadapt \
             --trim-n \
@@ -114,24 +107,10 @@ else
             -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
             -a "G{20}" \
             -A "G{20}" \
-            -o "${!sample1}"/trimmed_"${!sample1}"_1.fastq.gz \
-            -p "${!sample1}"/trimmed_"${!sample1}"_2.fastq.gz \
-            "${!sample1}"/*_1.fq.gz \
-            "${!sample1}"/*_2.fq.gz \
-            -j 12 &
-
-        cutadapt \
-            --trim-n \
-            -m 20 \
-            -q 20 \
-            -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCA \
-            -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
-            -a "G{20}" \
-            -A "G{20}" \
-            -o "${!sample2}"/trimmed_"${!sample2}"_1.fastq.gz \
-            -p "${!sample2}"/trimmed_"${!sample2}"_2.fastq.gz \
-            "${!sample2}"/*_1.fq.gz \
-            "${!sample2}"/*_2.fq.gz \
+            -o "${!sample}"/trimmed_"${!sample}"_1.fastq.gz \
+            -p "${!sample}"/trimmed_"${!sample}"_2.fastq.gz \
+            "${!sample}"/*_1.fastq.gz \
+            "${!sample}"/*_2.fastq.gz \
             -j 12 &
 
     done
@@ -147,15 +126,14 @@ echo -e "Trimming now complete.\n"
 read -p "Would you like to re-run FastQC HTML generation? <yes/no>: "
 if [[ ${REPLY} = "yes" ]]; then
     for ((i=1;i<=num_samples; i++)); do
-        sample1="sample_${i}_1"
-        sample2="sample_${i}_2"
+        sample="sample_${i}"
 
         fastqc -t 2 \
-            "${!sample1}"/trimmed_"${!sample1}"_1.fastq.gz \
-            "${!sample1}"/trimmed_"${!sample1}"_2.fastq.gz &
+            "${!sample}"/trimmed_"${!sample}"_1.fastq.gz \
+            "${!sample}"/trimmed_"${!sample}"_2.fastq.gz &
         fastqc -t 2 \
-            "${!sample2}"/trimmed_"${!sample2}"_1.fastq.gz \
-            "${!sample2}"/trimmed_"${!sample2}"_2.fastq.gz &
+            "${!}"/trimmed_"${!}"_1.fastq.gz \
+            "${!}"/trimmed_"${!}"_2.fastq.gz &
     done
 
     wait
@@ -178,29 +156,21 @@ else
     echo -e "Index files matching "${index}" found. Continuing to Bowtie2.\n"
 fi
 
-if compgen -G "${sample_1_1}/mapped_*.bam" > /dev/null; then
+if compgen -G "${sample_1}/mapped_*.bam" > /dev/null; then
     echo -e "Skipping Bowtie2 alignment.\n"
 else
     echo -e "Beginning Bowtie2 alignment.\n"
 
     for ((i=1;i<=num_samples; i++)); do
-        sample1="sample_${i}_1"
-        sample2="sample_${i}_2"
+        sample="sample_${i}"
 
         bowtie2 \
             -p 12 \
             -x ${index} \
-            -1 "${!sample1}"/trimmed_"${!sample1}"_1.fastq.gz \
-            -2 "${!sample1}"/trimmed_"${!sample1}"_2.fastq.gz \
+            -1 "${!sample}"/trimmed_"${!sample}"_1.fastq.gz \
+            -2 "${!sample}"/trimmed_"${!sample}"_2.fastq.gz \
             | \
-            samtools view -bS -> "${!sample1}"/mapped_"${!sample1}".bam &
-        bowtie2 \
-            -p 12 \
-            -x ${index} \
-            -1 "${!sample2}"/trimmed_"${!sample2}"_1.fastq.gz \
-            -2 "${!sample2}"/trimmed_"${!sample2}"_2.fastq.gz \
-            | \
-            samtools view -bS -> "${!sample2}"/mapped_"${!sample2}".bam &
+            samtools view -bS -> "${!sample}"/mapped_"${!sample}".bam &
     done
 
     wait
@@ -211,37 +181,29 @@ fi
 echo -e "Alignment complete. Continuing to sorting.\n"
 
 # sorting & indexing files
-if compgen -G "${sample_1_1}/sorted_mapped_*.bam" > /dev/null; then
+if compgen -G "${sample_1}/sorted_mapped_*.bam" > /dev/null; then
     echo -e "Skipping sorting.\n"
 else
-    if compgen -G "${sample_1_1}/mapped_*.bam" > /dev/null; then
+    if compgen -G "${sample_1}/mapped_*.bam" > /dev/null; then
         echo -e "Now sorting .bam files.\n"
 
         for ((i=1;i<=num_samples; i++)); do
-            sample1="sample_${i}_1"
-            sample2="sample_${i}_2"
+            sample="sample_${i}"
 
             samtools sort \
                 -@ 50 \
-                "${!sample1}"/mapped_"${!sample1}".bam \
-                -o "${!sample1}"/sorted_mapped_"${!sample1}".bam &
-            samtools sort \
-                -@ 50 \
-                "${!sample2}"/mapped_"${!sample2}".bam \
-                -o "${!sample2}"/sorted_mapped_"${!sample2}".bam &
+                "${!sample}"/mapped_"${!sample}".bam \
+                -o "${!sample}"/sorted_mapped_"${!sample}".bam &
         done
 
         wait
 
         echo -e "Now creating indices for .bam files.\n"
         for ((i=1;i<=num_samples; i++)); do
-            sample1="sample_${i}_1"
-            sample2="sample_${i}_2"
+            sample="sample_${i}"
 
             samtools index \
-                -b "${!sample1}"/sorted_mapped_"${!sample1}".bam &
-            samtools index \
-                -b "${!sample2}"/sorted_mapped_"${!sample2}".bam &
+                -b "${!sample}"/sorted_mapped_"${!sample}".bam &
         done
 
         wait
@@ -254,7 +216,7 @@ else
 fi
 
 # normalization of read numbers
-if [[ -f "${sample_1_1}/sorted_mapped_${sample_1_1}.bw" ]]; then
+if [[ -f "${sample_1}/sorted_mapped_${sample_1}.bw" ]]; then
     echo -e "Skipping normalization.\n"
 else
     if [[ "${norm}" == "RPKM" || "${norm}" == "rpkm" ]]; then
@@ -264,19 +226,11 @@ else
         conda activate deeptools_env
 
         for ((i=1;i<=num_samples; i++)); do
-            sample1="sample_${i}_1"
-            sample2="sample_${i}_2"
+            sample="sample_${i}"
 
             bamCoverage \
-                -b "${!sample1}"/sorted_mapped_"${!sample1}".bam \
-                -o "${!sample1}"/sorted_mapped_"${!sample1}".bw \
-                --normalizeUsing RPKM \
-                --binSize 20 \
-                -p 50 \
-                --minMappingQuality 10 &
-            bamCoverage \
-                -b "${!sample2}"/sorted_mapped_"${!sample2}".bam \
-                -o "${!sample2}"/sorted_mapped_"${!sample2}".bw \
+                -b "${!sample}"/sorted_mapped_"${!sample}".bam \
+                -o "${!sample}"/sorted_mapped_"${!sample}".bw \
                 --normalizeUsing RPKM \
                 --binSize 20 \
                 -p 50 \
@@ -292,20 +246,11 @@ else
         conda activate deeptools_env
 
         for ((i=1;i<=num_samples; i++)); do
-            sample1="sample_${i}_1"
-            sample2="sample_${i}_2"
+            sample="sample_${i}"
 
             bamCoverage \
-                -b "${!sample1}"/sorted_mapped_"${!sample1}".bam \
-                -o "${!sample1}"/sorted_mapped_"${!sample1}".bw \
-                --normalizeUsing CPM \
-                --binSize 20 \
-                -p 12 \
-                --minMappingQuality 10 \
-                --smoothLength 60 &
-            bamCoverage \
-                -b "${!sample2}"/sorted_mapped_"${!sample2}".bam \
-                -o "${!sample2}"/sorted_mapped_"${!sample2}".bw \
+                -b "${!sample}"/sorted_mapped_"${!sample}".bam \
+                -o "${!sample}"/sorted_mapped_"${!sample}".bw \
                 --normalizeUsing CPM \
                 --binSize 20 \
                 -p 12 \
@@ -324,26 +269,19 @@ else
         fi
 
         for ((i=1;i<=num_samples; i++)); do
-            sample1="sample_${i}_1"
-            sample2="sample_${i}_2"
+            sample="sample_${i}"
 
             bowtie2 \
                 -p 24 \
                 -x spike_index \
-                -1 "${!sample1}"/trimmed_"${!sample1}"_1.fastq.gz \
-                -2 "${!sample1}"/trimmed_"${!sample1}"_2.fastq.gz \
-                -S "${!sample1}"_spike.sam 2> "${!sample1}"_spike_stats.txt &
-            bowtie2 \
-                -p 24 \
-                -x spike_index \
-                -1 "${!sample2}"/trimmed_"${!sample2}"_1.fastq.gz \
-                -2 "${!sample2}"/trimmed_"${!sample2}"_2.fastq.gz \
-                -S "${!sample2}"_spike.sam 2> "${!sample2}"_spike_stats.txt &
+                -1 "${!sample}"/trimmed_"${!sample}"_1.fastq.gz \
+                -2 "${!sample}"/trimmed_"${!sample}"_2.fastq.gz \
+                -S "${!sample}"_spike.sam 2> "${!sample}"_spike_stats.txt &
         
             wait
 
             declare -A spike_counts
-            for f in "${!sample1}" "${!sample2}"; do
+            for f in "${!sample}" "${!}"; do
                 concordant_1=$(grep "concordantly exactly 1 time" ${f}_spike_stats.txt | awk '{print $1}')
                 concordant_multi=$(grep "concordantly >1 times" ${f}_spike_stats.txt | head -1 | awk '{print $1}')
                 total_align=$((concordant_1 + concordant_multi))
@@ -352,7 +290,7 @@ else
             done
             
             min_count=""
-            for f in "${!sample1}" "${!sample2}"}; do
+            for f in "${!sample}" "${!}"}; do
                 if [[ -z "$min_count" || ${spike_counts[${f}]} -lt $min_count ]]; then
                     min_count=${spike_counts[${f}]}
                 fi
@@ -361,7 +299,7 @@ else
             echo "min count is: ${min_count}"
 
             declare -A sf
-            for f in "${!sample1}" "${!sample2}"}; do
+            for f in "${!sample}" "${!}"}; do
                 sf[${f}]=$(awk -v c=${min_count} -v n=${spike_counts[${f}]} 'BEGIN{printf "%.6f", c/n}')
                 echo "${f} scale factor: ${sf[${f}]}"
             done
@@ -371,20 +309,12 @@ else
         conda activate deeptools_env
 
         for ((i=1;i<=num_samples; i++)); do
-            sample1="sample_${i}_1"
-            sample2="sample_${i}_2"
+            sample="sample_${i}"
 
             bamCoverage \
-                -b "${!sample1}"/sorted_mapped_"${!sample1}".bam \
-                -o "${!sample1}"/sorted_mapped_"${!sample1}".bw \
-                --scaleFactor ${sf["${!sample1}"]} \
-                --binSize 20 \
-                -p 24 \
-                --minMappingQuality 10 &
-            bamCoverage \
-                -b "${!sample2}"/sorted_mapped_"${!sample2}".bam \
-                -o "${!sample2}"/sorted_mapped_"${!sample2}".bw \
-                --scaleFactor ${sf["${!sample2}"]} \
+                -b "${!sample}"/sorted_mapped_"${!sample}".bam \
+                -o "${!sample}"/sorted_mapped_"${!sample}".bw \
+                --scaleFactor ${sf["${!sample}"]} \
                 --binSize 20 \
                 -p 24 \
                 --minMappingQuality 10 &
@@ -407,17 +337,9 @@ else
 
     for ((i=1;i<=num_samples; i++)); do
         sample="sample_${i}"
-        sample1="sample_${i}_1"
-        sample2="sample_${i}_2"
 
-        bigwigCompare \
-            -b1 "${!sample1}"/sorted_mapped_"${!sample1}".bw \
-            -b2 "${!sample2}"/sorted_mapped_"${!sample2}".bw \
-            --operation mean \
-            --binSize 50 \
-            --outFileFormat bigwig \
-            -p 24 \
-            --outFileName ${!sample}_merged.bw
+        cp "${!sample}"/sorted_mapped_"${!sample}".bw ${!sample}_merged.bw
+
     done
         
     wait

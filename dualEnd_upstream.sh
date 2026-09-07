@@ -79,11 +79,11 @@ else
         sample2="sample_${i}_2"
 
         fastqc -t 2 \
-            "${!sample1}"/*_1.fastq.gz \
-            "${!sample1}"/*_2.fastq.gz &
+            "${!sample1}"/*_1.fq.gz \
+            "${!sample1}"/*_2.fq.gz &
         fastqc -t 2 \
-            "${!sample2}"/*_1.fastq.gz \
-            "${!sample2}"/*_2.fastq.gz &
+            "${!sample2}"/*_1.fq.gz \
+            "${!sample2}"/*_2.fq.gz &
     done
 
     wait
