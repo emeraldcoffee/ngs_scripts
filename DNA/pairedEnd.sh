@@ -66,8 +66,8 @@ while getopts "s:S:i:n:a:h" opt; do
             done
             ;;
         S)
-            exp_name="$OPTARG"
-            echo "Experiment name: $exp_name"
+            job_name="$OPTARG"
+            echo "Experiment name: $job_name"
             ;;
         i)
             index="$OPTARG"
@@ -140,7 +140,7 @@ fi
 
 echo -e "Now trimming with cutadapt.\n"
 
-# trimming adapters, poly-G tails
+# uses cutadapt to trim off adapters and poly-G tails from sequencing data
 if compgen -G "${sample_1_1}/trimmed_*_R2.fastq.gz" > /dev/null; then
     echo -e "Skipping cutadapt trimming.\n"
 else
@@ -185,7 +185,8 @@ fi
 
 echo -e "Trimming now complete.\n"
 
-# if quality before trimming was subpar (or had overrepresented sequences or high adapter content), recheck FastQC HTMLs
+# if quality before trimming was subpar (or had overrepresented sequences or high adapter content),
+# users may recheck FastQC HTMLs
 read -p "Would you like to re-run FastQC HTML generation? <yes/no>: "
 if [[ ${REPLY} = "yes" ]]; then
     for ((i=1;i<=num_samples; i++)); do
@@ -212,7 +213,7 @@ echo ""
 
 echo -e "Beginning alignment.\n"
 
-# aligning with reference genomes using Bowtie2
+# aligning reads with reference genomes using Bowtie2
 if [[ ! -f "${index}.1.bt2" ]]; then
     echo "Warning: index files matching "${index}" not found. Check the path."
     exit 1
@@ -295,12 +296,12 @@ else
     fi
 fi
 
-# normalization of read numbers
+# performs normalization of sequence reads
 if [[ -f "${sample_1_1}/sorted_mapped_${sample_1_1}.bw" ]]; then
     echo -e "Skipping normalization.\n"
 else
     if [[ "${norm}" == "RPKM" || "${norm}" == "rpkm" ]]; then
-        echo -e "Normalizing using RPKM.\n"
+        echo -e "Normalizing using RPKM. with a bin size of 20.\n"
 
         eval "$(conda shell.bash hook)"
         conda activate deeptools_env
@@ -328,7 +329,7 @@ else
         wait
 
     elif [[ "${norm}" == "CPM" || "${norm}" == "cpm" ]]; then
-        echo -e "Normalizing using CPM.\n"
+        echo -e "Normalizing using CPM with a bin size of 20 and a smooth length of 60bp.\n"
 
         eval "$(conda shell.bash hook)"
         conda activate deeptools_env
@@ -400,8 +401,6 @@ else
                 fi
             done
 
-            echo "min count is: ${min_count}"
-
             declare -A sf
             for f in "${!sample1}" "${!sample2}"}; do
                 sf[${f}]=$(awk -v c=${min_count} -v n=${spike_counts[${f}]} 'BEGIN{printf "%.6f", c/n}')
@@ -440,7 +439,7 @@ echo ""
 
 echo -e "Normalization complete. Now merging replicates.\n"
 
-# merging replicates of sample_1 and of sample_2
+# merging sample replicates
 if [[ -f "${sample_1}_merged.bw" ]]; then
     echo -e "Skipping replicate merging.\n"
 else
@@ -469,7 +468,7 @@ echo ""
 
 echo -e "Replicate merging complete. Now creating matrix for plotting profiles and heatmaps.\n"
 
-# computing a matrix for profile & heatmap
+# computing a matrix for plotting profiles & heatmaps
 if [[ -f "${anno}" ]]; then
 
     eval "$(conda shell.bash hook)"
@@ -484,7 +483,7 @@ if [[ -f "${anno}" ]]; then
     computeMatrix scale-regions \
         -S ${computing_samples_file} \
         -R ${anno} \
-        -o ${exp_name}_matrix \
+        -o ${job_name}_matrix \
         -m 5000 \
         --startLabel TSS \
         --endLabel TES \
@@ -506,11 +505,11 @@ conda activate deeptools_env
 
 # creating a profile
 plotProfile \
-    -m ${exp_name}_matrix \
-    -o ${exp_name}_profile.pdf \
+    -m ${job_name}_matrix \
+    -o ${job_name}_profile.pdf \
     --averageType mean \
     --yAxisLabel Average_Signal \
-    --plotTitle ${exp_name} \
+    --plotTitle ${job_name} \
     --legendLocation best \
     --perGroup \
     --startLabel TSS \
@@ -521,8 +520,8 @@ conda activate deeptools_env
 
 # creating a heatmap
 plotHeatmap \
-    -m ${exp_name}_matrix \
-    -o ${exp_name}_heatmap.pdf \
+    -m ${job_name}_matrix \
+    -o ${job_name}_heatmap.pdf \
     --sortRegions descend \
     --linesAtTickMarks \
     --sortUsing mean \
