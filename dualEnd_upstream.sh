@@ -1,7 +1,41 @@
 #!/usr/bin/env bash
 set -e
 
-# arguments
+# ----------------------
+# This script is intended to be used for the processing of CUT&Run, ChIP, or other protein-DNA
+# interaction sequencing.
+# Each step of this pipeline will skip if the 1st sample's 1st replicate's associated output
+# file exists. If the previous run of the script failed in that step, please delete at least
+# the 1st sample's 1st replicate associated output file. 
+# ----------------------
+
+# ----------------------
+# This script expects a file structure like the following:
+# /usr
+# |-- sample_1_1
+# |   |-- sample_1_1_R1.fq.gz
+# |   |-- sample_1_1_R2.fq.gz
+# |-- sample_1_2
+# |   |-- sample_1_2_R1.fq.gz
+# |   |-- sample_1_2_R2.fq.gz
+# |-- sample_2_1
+# |   |-- sample_2_1_R1.fq.gz
+# |   |-- sample_2_1_R2.fq.gz
+# |-- sample_2_2
+# |   |-- sample_2_2_R1.fq.gz
+# |   |-- sample_2_2_R2.fq.gz
+# ----------------------
+
+# ----------------------
+# To run this script, enter the following into a Linux terminal while in your usr directory:
+# bash DNA_paired_upstream.sh \
+#   -s {number_of_samples} {sample_name_1} {sample_name_2} \
+#   -S {job_name} \
+#   -i {Bowtie2_index_files} \
+#   -n {normalization_method} \
+#   -a {genomic_annotation_file}
+# ----------------------
+
 usage() {
     echo "Help: This script takes in -s <sample_1_name>, -S <sample_2_name>,"
     echo "-i <Bowtie2_index_path>, -n <normalization method: CPM, RPKM, or spike-in>,"
@@ -68,7 +102,7 @@ echo ""
 
 echo -e "Beginning dual end sequencing upstream analysis.\n"
 
-# FastQC HTML generation to check sequencing quality
+# runs FastQC HTML generation for users to check sequencing quality
 if compgen -G "${sample_1_1}/*_2_fastqc.html" > /dev/null; then
     echo -e "Skipping FastQC HTML generation.\n"
 else
@@ -78,12 +112,20 @@ else
         sample1="sample_${i}_1"
         sample2="sample_${i}_2"
 
+        # if sequencing data is in .fastq.gz format, changes the file extension to fq.gz
+        if compgen -G "${!sample1}"/*_R1.fq.gz > /dev/null; then
+            mv ${!sample1}"/*_R1.fastq.gz ${!sample1}"/*_R1.fq.gz
+            mv ${!sample1}"/*_R2.fastq.gz ${!sample1}"/*_R1.fq.gz
+            mv ${!sample2}"/*_R1.fastq.gz ${!sample2}"/*_R1.fq.gz
+            mv ${!sample2}"/*_R2.fastq.gz ${!sample2}"/*_R1.fq.gz
+        fi
+
         fastqc -t 2 \
-            "${!sample1}"/*_1.fq.gz \
-            "${!sample1}"/*_2.fq.gz &
+            "${!sample1}"/*_R1.fq.gz \
+            "${!sample1}"/*_R2.fq.gz &
         fastqc -t 2 \
-            "${!sample2}"/*_1.fq.gz \
-            "${!sample2}"/*_2.fq.gz &
+            "${!sample2}"/*_R1.fq.gz \
+            "${!sample2}"/*_R2.fq.gz &
     done
 
     wait
@@ -99,7 +141,7 @@ fi
 echo -e "Now trimming with cutadapt.\n"
 
 # trimming adapters, poly-G tails
-if compgen -G "${sample_1_1}/trimmed_*_2.fastq.gz" > /dev/null; then
+if compgen -G "${sample_1_1}/trimmed_*_R2.fastq.gz" > /dev/null; then
     echo -e "Skipping cutadapt trimming.\n"
 else
     for ((i=1;i<=num_samples; i++)); do
@@ -114,10 +156,10 @@ else
             -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
             -a "G{20}" \
             -A "G{20}" \
-            -o "${!sample1}"/trimmed_"${!sample1}"_1.fastq.gz \
-            -p "${!sample1}"/trimmed_"${!sample1}"_2.fastq.gz \
-            "${!sample1}"/*_1.fq.gz \
-            "${!sample1}"/*_2.fq.gz \
+            -o "${!sample1}"/trimmed_"${!sample1}"_R1.fastq.gz \
+            -p "${!sample1}"/trimmed_"${!sample1}"_R2.fastq.gz \
+            "${!sample1}"/*_R1.fq.gz \
+            "${!sample1}"/*_R2.fq.gz \
             -j 12 &
 
         cutadapt \
