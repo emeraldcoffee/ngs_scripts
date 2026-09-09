@@ -4,9 +4,16 @@ set -e
 # ----------------------
 # This script is intended to be used for the processing of CUT&Run, ChIP, or other protein-DNA
 # interaction sequencing.
+# 
 # Each step of this pipeline will skip if the 1st sample's 1st replicate's associated output
 # file exists. If the previous run of the script failed in that step, please delete at least
 # the 1st sample's 1st replicate associated output file. 
+#
+# This script expects the user to have a conda environment available named "deeptools_env" with
+# the deepTools suite installed.
+# 
+# Note that if the user is using spike-in normalization, either spike.fa or spike_index should
+# be available in the usr directory.
 # ----------------------
 
 # ----------------------
@@ -28,22 +35,33 @@ set -e
 
 # ----------------------
 # To run this script, enter the following into a Linux terminal while in your usr directory:
-# bash DNA_paired_upstream.sh \
-#   -s {number_of_samples} {sample_name_1} {sample_name_2} \
+# bash pairedEnd.sh \
+#   -s {number_of_samples} {sample_name_1} {sample_name_2} {etc} \
 #   -S {job_name} \
 #   -i {Bowtie2_index_files} \
 #   -n {normalization_method} \
 #   -a {genomic_annotation_file}
+#
+# For example:
+# bash pairedEnd.sh \
+#   -s 3 HSF_1 E2F4 CEBPa \
+#   -S H3K56 \
+#   -i /bt2_index/human/HG38 \
+#   -n RPKM \
+#   -a /anno/gencode.v38.annotation.gtf
 # ----------------------
 
 usage() {
-    echo "Help: This script takes in -s <sample_1_name>, -S <sample_2_name>,"
-    echo "-i <Bowtie2_index_path>, -n <normalization method: CPM, RPKM, or spike-in>,"
-    echo "-a <annotation path>, and -h for help."
+    echo "Help: This script takes in -s <number_of_samples> <sample_name_1> <sample_name_2>,"
+    echo "-S <job_name>, -i <Bowtie2_index_files>, -n <normalization method: CPM, RPKM, or spike-in>,"
+    echo "-a <genomic_annotation_file>, and -h for help."
 }
 
+echo ""
+
+echo "SETTINGS:"
+
 while getopts "s:S:i:n:a:h" opt; do
-    echo "SETTINGS:"
     case $opt in
         s)
             num_samples="$OPTARG"
@@ -58,7 +76,7 @@ while getopts "s:S:i:n:a:h" opt; do
                     exit 1
                 fi
 
-                declare -g "sample_${i}=${sample_name}" # sample_1=30min_1, sample_1_1=30min_1
+                declare -g "sample_${i}=${sample_name}"
                 declare -g "sample_${i}_1=${sample_name}_1"
                 declare -g "sample_${i}_2=${sample_name}_2"
 
@@ -103,7 +121,7 @@ echo ""
 echo -e "Beginning dual end sequencing upstream analysis.\n"
 
 # runs FastQC HTML generation for users to check sequencing quality
-if compgen -G "${sample_1_1}/*_2_fastqc.html" > /dev/null; then
+if compgen -G "${sample_1_1}/${sample_1_1}_fastqc.html" > /dev/null; then
     echo -e "Skipping FastQC HTML generation.\n"
 else
     echo "Starting FastQC HTML generation."
@@ -113,11 +131,11 @@ else
         sample2="sample_${i}_2"
 
         # if sequencing data is in .fastq.gz format, changes the file extension to fq.gz
-        if compgen -G "${!sample1}"/*_R1.fq.gz > /dev/null; then
-            mv ${!sample1}"/*_R1.fastq.gz ${!sample1}"/*_R1.fq.gz
-            mv ${!sample1}"/*_R2.fastq.gz ${!sample1}"/*_R1.fq.gz
-            mv ${!sample2}"/*_R1.fastq.gz ${!sample2}"/*_R1.fq.gz
-            mv ${!sample2}"/*_R2.fastq.gz ${!sample2}"/*_R1.fq.gz
+        if compgen -G "${!sample1}"/"${!sample1}"_R1.fq.gz > /dev/null; then
+            mv "${!sample1}"/"${!sample1}"_R1.fastq.gz "${!sample1}"/"${!sample1}"_R1.fq.gz
+            mv "${!sample1}"/"${!sample1}"_R2.fastq.gz "${!sample1}"/"${!sample1}"_R2.fq.gz
+            mv "${!sample2}"/"${!sample2}"_R1.fastq.gz "${!sample2}"/"${!sample2}"_R1.fq.gz
+            mv "${!sample2}"/"${!sample2}"_R2.fastq.gz "${!sample2}"/"${!sample2}"_R2.fq.gz
         fi
 
         fastqc -t 2 \
@@ -141,7 +159,7 @@ fi
 echo -e "Now trimming with cutadapt.\n"
 
 # uses cutadapt to trim off adapters and poly-G tails from sequencing data
-if compgen -G "${sample_1_1}/trimmed_*_R2.fastq.gz" > /dev/null; then
+if compgen -G "${sample_1_1}/trimmed_${sample_1_1}.fastq.gz" > /dev/null; then
     echo -e "Skipping cutadapt trimming.\n"
 else
     for ((i=1;i<=num_samples; i++)); do
@@ -221,7 +239,7 @@ else
     echo -e "Index files matching "${index}" found. Continuing to Bowtie2.\n"
 fi
 
-if compgen -G "${sample_1_1}/mapped_*.bam" > /dev/null; then
+if compgen -G "${sample_1_1}/mapped_${sample_1_1}.bam" > /dev/null; then
     echo -e "Skipping Bowtie2 alignment.\n"
 else
     echo -e "Beginning Bowtie2 alignment.\n"
@@ -233,15 +251,15 @@ else
         bowtie2 \
             -p 12 \
             -x ${index} \
-            -1 "${!sample1}"/trimmed_"${!sample1}"_1.fastq.gz \
-            -2 "${!sample1}"/trimmed_"${!sample1}"_2.fastq.gz \
+            -1 "${!sample1}"/trimmed_"${!sample1}"_R1.fastq.gz \
+            -2 "${!sample1}"/trimmed_"${!sample1}"_R2.fastq.gz \
             | \
             samtools view -bS -> "${!sample1}"/mapped_"${!sample1}".bam &
         bowtie2 \
             -p 12 \
             -x ${index} \
-            -1 "${!sample2}"/trimmed_"${!sample2}"_1.fastq.gz \
-            -2 "${!sample2}"/trimmed_"${!sample2}"_2.fastq.gz \
+            -1 "${!sample2}"/trimmed_"${!sample2}"_R1.fastq.gz \
+            -2 "${!sample2}"/trimmed_"${!sample2}"_R2.fastq.gz \
             | \
             samtools view -bS -> "${!sample2}"/mapped_"${!sample2}".bam &
     done
@@ -253,9 +271,9 @@ fi
 
 echo -e "Alignment complete. Continuing to sorting.\n"
 
-# sorting & indexing files
-if compgen -G "${sample_1_1}/sorted_mapped_*.bam" > /dev/null; then
-    echo -e "Skipping sorting.\n"
+# sorting & indexing aligned files
+if compgen -G "${sample_1_1}/sorted_mapped_${sample_1_1}.bam" > /dev/null; then
+    echo -e "Skipping sorting & indexing.\n"
 else
     if compgen -G "${sample_1_1}/mapped_*.bam" > /dev/null; then
         echo -e "Now sorting .bam files.\n"
@@ -466,7 +484,7 @@ fi
 
 echo ""
 
-echo -e "Replicate merging complete. Now creating matrix for plotting profiles and heatmaps.\n"
+echo -e "Replicate merging complete. Now creating matrix for plotting profiles and heatmaps with average signal.\n"
 
 # computing a matrix for plotting profiles & heatmaps
 if [[ -f "${anno}" ]]; then
@@ -503,7 +521,7 @@ echo -e "Matrix creation complete. Now moving forward to plotting profiles and h
 eval "$(conda shell.bash hook)"
 conda activate deeptools_env
 
-# creating a profile
+# plotting average signal profiles
 plotProfile \
     -m ${job_name}_matrix \
     -o ${job_name}_profile.pdf \
@@ -518,7 +536,7 @@ plotProfile \
 eval "$(conda shell.bash hook)"
 conda activate deeptools_env
 
-# creating a heatmap
+# plotting average signal heatmap
 plotHeatmap \
     -m ${job_name}_matrix \
     -o ${job_name}_heatmap.pdf \
