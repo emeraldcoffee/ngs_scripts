@@ -30,7 +30,7 @@ set -e
 
 # ----------------------
 # To run this script, enter the following into a Linux terminal while in your usr directory:
-# bash pairedEnd_noRep.sh \
+# bash DNA_pairedEnd_noRep.sh \
 #   -s {number_of_samples} {sample_name_1} {sample_name_2} {etc} \
 #   -S {job_name} \
 #   -i {Bowtie2_index_files} \
@@ -38,7 +38,7 @@ set -e
 #   -a {genomic_annotation_file}
 #
 # For example:
-# bash pairedEnd_noRep.sh \
+# bash DNA_pairedEnd_noRep.sh \
 #   -s 3 HSF_1 E2F4 CEBPa \
 #   -S H3K56 \
 #   -i /bt2_index/human/HG38 \
@@ -78,7 +78,7 @@ while getopts "s:S:i:n:a:h" opt; do
             ;;
         S)
             job_name="$OPTARG"
-            echo "Experiment name: $job_name"
+            echo "Job name: $job_name"
             ;;
         i)
             index="$OPTARG"
@@ -111,19 +111,19 @@ done
 
 echo ""
 
-echo -e "Beginning dual end sequencing upstream analysis.\n"
+echo -e "Beginning paired-end DNA sequencing upstream analysis.\n"
 
 # runs FastQC HTML generation for users to check sequencing quality
 if compgen -G "${sample_1}/${sample_1}_R1_fastqc.html" > /dev/null; then
-    echo "Skipping FastQC HTML generation."
+    echo -e "Skipping FastQC HTML generation.\n"
 else
-    echo "Starting FastQC HTML generation."
+    echo -e "Starting FastQC HTML generation.\n"
 
     for ((i=1;i<=num_samples; i++)); do 
         sample="sample_${i}"
 
         # if sequencing data is in .fastq.gz format, changes the file extension to fq.gz
-        if compgen -G "${!sample}"/*_R1.fq.gz > /dev/null; then
+        if compgen -G "${!sample}"/"${!sample}"_R1.fq.gz > /dev/null; then
             mv "${!sample}"/"${!sample}"_R1.fastq.gz "${!sample}"/"${!sample}"_R1.fq.gz
             mv "${!sample}"/"${!sample}"_R2.fastq.gz "${!sample}"/"${!sample}"_R2.fq.gz
         fi
@@ -131,6 +131,7 @@ else
         fastqc -t 2 \
             "${!sample}"/*_R1.fastq.gz \
             "${!sample}"/*_R2.fastq.gz &
+            
     done
 
     wait
@@ -141,14 +142,15 @@ else
 
     read -p "Press 'Enter' to continue. "
     echo ""
-fi
 
-echo -e "Now trimming with cutadapt.\n"
+fi
 
 # uses cutadapt to trim off adapters and poly-G tails from sequencing data
 if compgen -G "${sample_1}/trimmed_${sample_1}_R1.fastq.gz" > /dev/null; then
     echo "Skipping cutadapt trimming."
 else
+    echo -e "Now trimming with cutadapt.\n"
+
     for ((i=1;i<=num_samples; i++)); do
         sample="sample_${i}"
 
@@ -170,10 +172,9 @@ else
     
     wait
 
-    echo ""
-fi
+    echo -e "Trimming now complete.\n"
 
-echo -e "Trimming now complete.\n"
+fi
 
 # if quality before trimming was subpar (or had overrepresented sequences or high adapter content),
 # users may recheck FastQC HTMLs
@@ -198,8 +199,6 @@ fi
 
 echo ""
 
-echo -e "Beginning alignment.\n"
-
 # aligning reads with reference genomes using Bowtie2
 if [[ ! -f "${index}.1.bt2" ]]; then
     echo "Warning: index files matching "${index}" not found. Check the path."
@@ -209,7 +208,7 @@ else
 fi
 
 if compgen -G "${sample_1}/mapped_${sample_1}.bam" > /dev/null; then
-    echo "Skipping Bowtie2 alignment."
+    echo -e "Skipping Bowtie2 alignment.\n"
 else
     echo -e "Beginning Bowtie2 alignment.\n"
 
@@ -226,16 +225,15 @@ else
 
     wait
 
-    echo ""
+    echo -e "Alignment complete.\n"
+    
 fi
-
-echo -e "Alignment complete. Continuing to sorting.\n"
 
 # sorting & indexing aligned files
 if compgen -G "${sample_1}/sorted_mapped_${sample_1}.bam" > /dev/null; then
-    echo "Skipping sorting."
+    echo -e "Skipping sorting & indexing.\n"
 else
-    if compgen -G "${sample_1}/mapped_*.bam" > /dev/null; then
+    if compgen -G "${sample_1}/mapped_${sample_1}.bam" > /dev/null; then
         echo -e "Now sorting .bam files.\n"
 
         for ((i=1;i<=num_samples; i++)); do
@@ -344,10 +342,8 @@ else
             fi
 
             declare -A sf
-            for f in "${!sample}" "${!}"}; do
-                sf["${!sample}"]=$(awk -v c=${min_count} -v n=${spike_counts["${!sample}"]} 'BEGIN{printf "%.6f", c/n}')
-                echo ""${!sample}" scale factor: ${sf["${!sample}"]}"
-            done
+            sf["${!sample}"]=$(awk -v c=${min_count} -v n=${spike_counts["${!sample}"]} 'BEGIN{printf "%.6f", c/n}')
+            echo ""${!sample}" scale factor: ${sf["${!sample}"]}"
         done
 
         eval "$(conda shell.bash hook)"
@@ -447,5 +443,6 @@ plotHeatmap \
 
 echo ""
 
-echo -e "Profile & heatmap plotting complete. Upstream analysis now complete."
+echo -e "Profile & heatmap plotting complete. Upstream analysis now complete.\n"
+
 exit 0

@@ -3,7 +3,7 @@ set -e
 
 # ----------------------
 # This script is intended to be used for the processing of CUT&Run, ChIP, or other protein-DNA
-# interaction sequencing.
+# interaction sequencing data.
 # 
 # Each step of this pipeline will skip if the 1st sample's 1st replicate's associated output
 # file exists. If the previous run of the script failed in that step, please delete at least
@@ -35,7 +35,7 @@ set -e
 
 # ----------------------
 # To run this script, enter the following into a Linux terminal while in your usr directory:
-# bash pairedEnd.sh \
+# bash DNA_pairedEnd.sh \
 #   -s {number_of_samples} {sample_name_1} {sample_name_2} {etc} \
 #   -S {job_name} \
 #   -i {Bowtie2_index_files} \
@@ -43,7 +43,7 @@ set -e
 #   -a {genomic_annotation_file}
 #
 # For example:
-# bash pairedEnd.sh \
+# bash DNA_pairedEnd.sh \
 #   -s 3 HSF_1 E2F4 CEBPa \
 #   -S H3K56 \
 #   -i /bt2_index/human/HG38 \
@@ -85,7 +85,7 @@ while getopts "s:S:i:n:a:h" opt; do
             ;;
         S)
             job_name="$OPTARG"
-            echo "Experiment name: $job_name"
+            echo "Job name: $job_name"
             ;;
         i)
             index="$OPTARG"
@@ -97,7 +97,7 @@ while getopts "s:S:i:n:a:h" opt; do
             ;;
         a)
             anno="$OPTARG"
-            echo "Annotation path: $anno"
+            echo "Genomic annotation file path: $anno"
             ;;
         h)
             usage
@@ -118,13 +118,13 @@ done
 
 echo ""
 
-echo -e "Beginning dual end sequencing upstream analysis.\n"
+echo -e "Beginning paired-end DNA sequencing upstream analysis.\n"
 
 # runs FastQC HTML generation for users to check sequencing quality
-if compgen -G "${sample_1_1}/${sample_1_1}_fastqc.html" > /dev/null; then
+if compgen -G "${sample_1_1}/${sample_1_1}_R1_fastqc.html" > /dev/null; then
     echo -e "Skipping FastQC HTML generation.\n"
 else
-    echo "Starting FastQC HTML generation."
+    echo -e "Starting FastQC HTML generation.\n"
 
     for ((i=1;i<=num_samples; i++)); do
         sample1="sample_${i}_1"
@@ -138,12 +138,13 @@ else
             mv "${!sample2}"/"${!sample2}"_R2.fastq.gz "${!sample2}"/"${!sample2}"_R2.fq.gz
         fi
 
-        fastqc -t 2 \
+        fastqc -t 4 \
             "${!sample1}"/*_R1.fq.gz \
-            "${!sample1}"/*_R2.fq.gz &
-        fastqc -t 2 \
+            "${!sample1}"/*_R2.fq.gz \
             "${!sample2}"/*_R1.fq.gz \
             "${!sample2}"/*_R2.fq.gz &
+            
+
     done
 
     wait
@@ -154,14 +155,15 @@ else
 
     read -p "Press 'Enter' to continue. "
     echo ""
+
 fi
 
-echo -e "Now trimming with cutadapt.\n"
-
 # uses cutadapt to trim off adapters and poly-G tails from sequencing data
-if compgen -G "${sample_1_1}/trimmed_${sample_1_1}.fastq.gz" > /dev/null; then
+if compgen -G "${sample_1_1}/trimmed_${sample_1_1}_R1.fastq.gz" > /dev/null; then
     echo -e "Skipping cutadapt trimming.\n"
 else
+    echo -e "Now trimming with cutadapt.\n"
+
     for ((i=1;i<=num_samples; i++)); do
         sample1="sample_${i}_1"
         sample2="sample_${i}_2"
@@ -188,20 +190,19 @@ else
             -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
             -a "G{20}" \
             -A "G{20}" \
-            -o "${!sample2}"/trimmed_"${!sample2}"_1.fastq.gz \
-            -p "${!sample2}"/trimmed_"${!sample2}"_2.fastq.gz \
-            "${!sample2}"/*_1.fq.gz \
-            "${!sample2}"/*_2.fq.gz \
+            -o "${!sample2}"/trimmed_"${!sample2}"_R1.fastq.gz \
+            -p "${!sample2}"/trimmed_"${!sample2}"_R2.fastq.gz \
+            "${!sample2}"/*_R1.fq.gz \
+            "${!sample2}"/*_R2.fq.gz \
             -j 12 &
 
     done
     
     wait
 
-    echo ""
-fi
+    echo -e "Trimming now complete.\n"
 
-echo -e "Trimming now complete.\n"
+fi
 
 # if quality before trimming was subpar (or had overrepresented sequences or high adapter content),
 # users may recheck FastQC HTMLs
@@ -211,12 +212,11 @@ if [[ ${REPLY} = "yes" ]]; then
         sample1="sample_${i}_1"
         sample2="sample_${i}_2"
 
-        fastqc -t 2 \
-            "${!sample1}"/trimmed_"${!sample1}"_1.fastq.gz \
-            "${!sample1}"/trimmed_"${!sample1}"_2.fastq.gz &
-        fastqc -t 2 \
-            "${!sample2}"/trimmed_"${!sample2}"_1.fastq.gz \
-            "${!sample2}"/trimmed_"${!sample2}"_2.fastq.gz &
+        fastqc -t 4 \
+            "${!sample1}"/trimmed_"${!sample1}"_R1.fastq.gz \
+            "${!sample1}"/trimmed_"${!sample1}"_R2.fastq.gz \
+            "${!sample2}"/trimmed_"${!sample2}"_R1.fastq.gz \
+            "${!sample2}"/trimmed_"${!sample2}"_R2.fastq.gz &
     done
 
     wait
@@ -228,8 +228,6 @@ if [[ ${REPLY} = "yes" ]]; then
 fi
 
 echo ""
-
-echo -e "Beginning alignment.\n"
 
 # aligning reads with reference genomes using Bowtie2
 if [[ ! -f "${index}.1.bt2" ]]; then
@@ -253,29 +251,26 @@ else
             -x ${index} \
             -1 "${!sample1}"/trimmed_"${!sample1}"_R1.fastq.gz \
             -2 "${!sample1}"/trimmed_"${!sample1}"_R2.fastq.gz \
-            | \
-            samtools view -bS -> "${!sample1}"/mapped_"${!sample1}".bam &
+            | samtools view -bS -> "${!sample1}"/mapped_"${!sample1}".bam &
         bowtie2 \
             -p 12 \
             -x ${index} \
             -1 "${!sample2}"/trimmed_"${!sample2}"_R1.fastq.gz \
             -2 "${!sample2}"/trimmed_"${!sample2}"_R2.fastq.gz \
-            | \
-            samtools view -bS -> "${!sample2}"/mapped_"${!sample2}".bam &
+            | samtools view -bS -> "${!sample2}"/mapped_"${!sample2}".bam &
     done
 
     wait
 
-    echo ""
-fi
+    echo -e "Alignment complete.\n"
 
-echo -e "Alignment complete. Continuing to sorting.\n"
+fi
 
 # sorting & indexing aligned files
 if compgen -G "${sample_1_1}/sorted_mapped_${sample_1_1}.bam" > /dev/null; then
     echo -e "Skipping sorting & indexing.\n"
 else
-    if compgen -G "${sample_1_1}/mapped_*.bam" > /dev/null; then
+    if compgen -G "${sample_1_1}/mapped_${sample_1_1}.bam" > /dev/null; then
         echo -e "Now sorting .bam files.\n"
 
         for ((i=1;i<=num_samples; i++)); do
@@ -455,12 +450,14 @@ fi
 
 echo ""
 
-echo -e "Normalization complete. Now merging replicates.\n"
+echo -e "Normalization complete.\n"
 
 # merging sample replicates
 if [[ -f "${sample_1}_merged.bw" ]]; then
     echo -e "Skipping replicate merging.\n"
 else
+    echo -e "Starting replicate merging.\n"
+
     eval "$(conda shell.bash hook)"
     conda activate deeptools_env
 
@@ -480,11 +477,11 @@ else
     done
         
     wait
+
+    echo -e "Replicate merging complete.\n"
 fi
 
-echo ""
-
-echo -e "Replicate merging complete. Now creating matrix for plotting profiles and heatmaps with average signal.\n"
+echo -e "Now creating matrix for plotting profiles and heatmaps with average signal.\n"
 
 # computing a matrix for plotting profiles & heatmaps
 if [[ -f "${anno}" ]]; then
@@ -559,5 +556,6 @@ plotHeatmap \
 
 echo ""
 
-echo -e "Profile & heatmap plotting complete. Upstream analysis now complete."
+echo -e "Profile & heatmap plotting complete. Upstream analysis now complete.\n"
+
 exit 0
